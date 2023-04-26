@@ -19,7 +19,7 @@ func checkStatus(done chan struct{}, urls ...string) <-chan Result {
 
 	resultsSuccesfull := make(chan Result)
 	resultsFailed := make(chan Result, 1)
-	// testCh := make(chan struct{})
+	testCh := make(chan struct{})
 
 	// wg.Add(1)
 	go func() {
@@ -48,6 +48,7 @@ func checkStatus(done chan struct{}, urls ...string) <-chan Result {
 		// select {
 		// case <-testCh:
 		for urlFailed := range resultsFailed {
+			testCh <- struct{}{}
 			fmt.Println("URL", urlFailed)
 			for i := 0; i < retry; i++ {
 				resp, err := client.Get(urlFailed.URL)
@@ -62,6 +63,7 @@ func checkStatus(done chan struct{}, urls ...string) <-chan Result {
 		// }
 	}()
 
+	<-testCh
 	return resultsSuccesfull
 }
 
@@ -70,7 +72,7 @@ func main() {
 	defer close(done)
 
 	// "https://someOtherSite.com", "https://www.bbas.com", "https://badhost", "https://www.avito.ru/", "https://www.ozon.ru/"
-	urls := []string{"https://badhost", "https://vk.com/", "https://yandex.ru/", "https://www.google.com/", "https://github.com/", "http://medium.com/", "https://golang.org/"}
+	urls := []string{"https://badhost", "https://someOtherSite", "https://www.avito.ru/", "https://www.ozon.ru/", "https://vk.com/", "https://yandex.ru/", "https://www.google.com/", "https://github.com/", "http://medium.com/", "https://golang.org/"}
 	for response := range checkStatus(done, urls...) {
 		// time.Sleep(5 * time.Second)
 		if response.Error != nil {
