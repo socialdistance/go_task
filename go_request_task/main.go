@@ -67,7 +67,7 @@ func checkStatus(done chan struct{}, urls ...string) <-chan Result {
 
 	wg.Add(len(urls))
 	go func() {
-		defer wg.Done()
+		// defer wg.Done()
 		defer close(resultsSuccesfull)
 		for _, url := range urls {
 			resp, err := client.Get(url)
@@ -80,11 +80,13 @@ func checkStatus(done chan struct{}, urls ...string) <-chan Result {
 				fmt.Println("success")
 			}
 		}
+
+		wg.Done()
 	}()
 
 	wg.Add(len(resultsFailed))
 	go func() {
-		defer wg.Done()
+		// defer wg.Done()
 		defer close(resultsFailed)
 		for urlFailed := range resultsFailed {
 			for i := 0; i < retry; i++ {
@@ -98,13 +100,14 @@ func checkStatus(done chan struct{}, urls ...string) <-chan Result {
 			}
 			<-resultsFailed
 		}
+		wg.Done()
 	}()
 
-	go func() {
-		// close(resultsSuccesfull)
-		// close(resultsFailed)
-		wg.Wait()
-	}()
+	// go func() {
+	// close(resultsSuccesfull)
+	// close(resultsFailed)
+	wg.Wait()
+	// }()
 	// <-testCh
 	return resultsSuccesfull
 }
