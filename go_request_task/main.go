@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -14,18 +15,60 @@ type Result struct {
 
 func checkStatus(done chan struct{}, urls ...string) <-chan Result {
 	retry := 3
-	// wg := &sync.WaitGroup{}
+	wg := &sync.WaitGroup{}
 	client := &http.Client{Timeout: 2 * time.Second}
 
 	resultsSuccesfull := make(chan Result)
 	resultsFailed := make(chan Result, 1)
-	testCh := make(chan struct{})
+	// testCh := make(chan struct{})
 
 	// wg.Add(1)
+	// go func() {
+	// 	// defer wg.Done()
+	// 	defer close(resultsSuccesfull)
+	// 	// defer close(testCh)
+	// 	for _, url := range urls {
+	// 		resp, err := client.Get(url)
+	// 		if err != nil {
+	// 			resultsFailed <- Result{Response: nil, Error: err, URL: url}
+	// 			fmt.Println("failed")
+	// 			// testCh <- struct{}{}
+	// 		} else {
+	// 			resultsSuccesfull <- Result{Response: resp, Error: nil, URL: url}
+	// 			fmt.Println("success")
+	// 		}
+	// 	}
+
+	// }()
+
+	// // for retry requests
+	// // wg.Add(1)
+	// go func() {
+	// 	// defer wg.Done()
+	// 	defer close(resultsFailed)
+	// 	// select {
+	// 	// case <-testCh:
+	// 	for urlFailed := range resultsFailed {
+	// 		// testCh <- struct{}{}
+	// 		fmt.Println("URL", urlFailed)
+	// 		for i := 0; i < retry; i++ {
+	// 			resp, err := client.Get(urlFailed.URL)
+	// 			if err != nil {
+	// 				fmt.Printf("WARNING: Error job in attempt no %d: %s - retrying...\n", i+1, err)
+	// 			} else {
+	// 				resultsSuccesfull <- Result{Response: resp, Error: err}
+	// 				continue
+	// 			}
+	// 		}
+	// 		<-resultsFailed
+	// 	}
+	// 	// }
+	// }()
+
+	wg.Add(len(urls))
 	go func() {
-		// defer wg.Done()
+		defer wg.Done()
 		defer close(resultsSuccesfull)
-		// defer close(testCh)
 		for _, url := range urls {
 			resp, err := client.Get(url)
 			if err != nil {
@@ -37,33 +80,32 @@ func checkStatus(done chan struct{}, urls ...string) <-chan Result {
 				fmt.Println("success")
 			}
 		}
-
 	}()
 
-	// for retry requests
-	// wg.Add(1)
+	wg.Add(len(resultsFailed))
 	go func() {
-		// defer wg.Done()
+		defer wg.Done()
 		defer close(resultsFailed)
-		// select {
-		// case <-testCh:
 		for urlFailed := range resultsFailed {
-			testCh <- struct{}{}
-			fmt.Println("URL", urlFailed)
 			for i := 0; i < retry; i++ {
 				resp, err := client.Get(urlFailed.URL)
 				if err != nil {
 					fmt.Printf("WARNING: Error job in attempt no %d: %s - retrying...\n", i+1, err)
 				} else {
 					resultsSuccesfull <- Result{Response: resp, Error: err}
+					continue
 				}
 			}
 			<-resultsFailed
 		}
-		// }
 	}()
 
-	<-testCh
+	go func() {
+		// close(resultsSuccesfull)
+		// close(resultsFailed)
+		wg.Wait()
+	}()
+	// <-testCh
 	return resultsSuccesfull
 }
 
