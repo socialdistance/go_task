@@ -21,7 +21,7 @@ type ResultFile struct {
 	Status string
 }
 
-func checkStatus(done chan struct{}, urls ...string) <-chan Result {
+func checkStatus(urls ...string) <-chan Result {
 	retry := 3
 	wg := &sync.WaitGroup{}
 	client := &http.Client{Timeout: 2 * time.Second}
@@ -79,7 +79,7 @@ func writeFile(lines []ResultFile) {
 	buffer := bufio.NewWriterSize(f, 128)
 
 	for _, line := range lines {
-		_, err := buffer.WriteString(line.URL + line.Status + "\n")
+		_, err = buffer.WriteString(line.URL + line.Status + "\n")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -88,37 +88,41 @@ func writeFile(lines []ResultFile) {
 	if err := buffer.Flush(); err != nil {
 		log.Fatal(err)
 	}
-
 }
 
 const batchSize = 2
 
-func batch(data []ResultFile) {
-	chBuf := make(chan struct{}, batchSize)
-
-	wg := &sync.WaitGroup{}
-
-	for _, i := range data {
-		wg.Add(1)
-		chBuf <- struct{}{}
-		i := i
-		go func() {
-			defer wg.Done()
-			fmt.Println(i)
-			<-chBuf
-		}()
+func process(data []ResultFile) {
+	for start, end := 0, 0; start <= len(data)-1; start = end {
+		end = start + batchSize
+		if end > len(data) {
+			end = len(data)
+		}
+		batch := data[start:end]
+		writeFile(batch)
 	}
-
-	wg.Wait()
+	fmt.Println("done processing all data")
 }
+
+// func processBatch(list []ResultFile) {
+// 	var wg sync.WaitGroup
+// 	for _, i := range list {
+// 		x := i
+// 		wg.Add(1)
+// 		go func() {
+// 			defer wg.Done()
+// 			fmt.Println(x)
+// 		}()
+// 	}
+
+// 	wg.Wait()
+// }
 
 func main() {
 	sliceResultToFile := []ResultFile{}
-	done := make(chan struct{})
-	defer close(done)
 
 	urls := []string{"https://www.bbas.com", "https://badhost", "https://someOtherSite", "https://www.avito.ru/", "https://www.ozon.ru/", "https://vk.com/", "https://yandex.ru/", "https://www.google.com/", "https://github.com/", "http://medium.com/", "https://golang.org/"}
-	for response := range checkStatus(done, urls...) {
+	for response := range checkStatus(urls...) {
 		if response.Error != nil {
 			fmt.Printf("error: %v\n", response.Error)
 			continue
@@ -132,5 +136,5 @@ func main() {
 	}
 
 	// writeFile(sliceResultToFile)
-	batch(sliceResultToFile)
+	process(sliceResultToFile)
 }
