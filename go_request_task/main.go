@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -13,6 +16,11 @@ type Result struct {
 	URL      string
 }
 
+type ResultFile struct {
+	URL    string
+	Status string
+}
+
 func checkStatus(done chan struct{}, urls ...string) <-chan Result {
 	retry := 3
 	wg := &sync.WaitGroup{}
@@ -20,74 +28,26 @@ func checkStatus(done chan struct{}, urls ...string) <-chan Result {
 
 	resultsSuccesfull := make(chan Result)
 	resultsFailed := make(chan Result, 1)
-	// testCh := make(chan struct{})
 
-	// wg.Add(1)
-	// go func() {
-	// 	// defer wg.Done()
-	// 	defer close(resultsSuccesfull)
-	// 	// defer close(testCh)
-	// 	for _, url := range urls {
-	// 		resp, err := client.Get(url)
-	// 		if err != nil {
-	// 			resultsFailed <- Result{Response: nil, Error: err, URL: url}
-	// 			fmt.Println("failed")
-	// 			// testCh <- struct{}{}
-	// 		} else {
-	// 			resultsSuccesfull <- Result{Response: resp, Error: nil, URL: url}
-	// 			fmt.Println("success")
-	// 		}
-	// 	}
-
-	// }()
-
-	// // for retry requests
-	// // wg.Add(1)
-	// go func() {
-	// 	// defer wg.Done()
-	// 	defer close(resultsFailed)
-	// 	// select {
-	// 	// case <-testCh:
-	// 	for urlFailed := range resultsFailed {
-	// 		// testCh <- struct{}{}
-	// 		fmt.Println("URL", urlFailed)
-	// 		for i := 0; i < retry; i++ {
-	// 			resp, err := client.Get(urlFailed.URL)
-	// 			if err != nil {
-	// 				fmt.Printf("WARNING: Error job in attempt no %d: %s - retrying...\n", i+1, err)
-	// 			} else {
-	// 				resultsSuccesfull <- Result{Response: resp, Error: err}
-	// 				continue
-	// 			}
-	// 		}
-	// 		<-resultsFailed
-	// 	}
-	// 	// }
-	// }()
-
-	wg.Add(len(urls))
+	wg.Add(1)
 	go func() {
-		// defer wg.Done()
-		defer close(resultsSuccesfull)
+		defer wg.Done()
+		defer close(resultsFailed)
 		for _, url := range urls {
 			resp, err := client.Get(url)
 			if err != nil {
 				resultsFailed <- Result{Response: nil, Error: err, URL: url}
 				fmt.Println("failed")
-				// testCh <- struct{}{}
 			} else {
 				resultsSuccesfull <- Result{Response: resp, Error: nil, URL: url}
 				fmt.Println("success")
 			}
 		}
-
-		wg.Done()
 	}()
 
-	wg.Add(len(resultsFailed))
+	wg.Add(1)
 	go func() {
-		// defer wg.Done()
-		defer close(resultsFailed)
+		defer wg.Done()
 		for urlFailed := range resultsFailed {
 			for i := 0; i < retry; i++ {
 				resp, err := client.Get(urlFailed.URL)
@@ -98,33 +58,79 @@ func checkStatus(done chan struct{}, urls ...string) <-chan Result {
 					continue
 				}
 			}
-			<-resultsFailed
 		}
-		wg.Done()
 	}()
 
-	// go func() {
-	// close(resultsSuccesfull)
-	// close(resultsFailed)
-	wg.Wait()
-	// }()
-	// <-testCh
+	go func() {
+		wg.Wait()
+		close(resultsSuccesfull)
+	}()
+
 	return resultsSuccesfull
 }
 
+func writeFile(lines []ResultFile) {
+	f, err := os.Create("file.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	buffer := bufio.NewWriterSize(f, 128)
+
+	for _, line := range lines {
+		_, err := buffer.WriteString(line.URL + line.Status + "\n")
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	if err := buffer.Flush(); err != nil {
+		log.Fatal(err)
+	}
+
+}
+
+const batchSize = 2
+
+func batch(data []ResultFile) {
+	chBuf := make(chan struct{}, batchSize)
+
+	wg := &sync.WaitGroup{}
+
+	for _, i := range data {
+		wg.Add(1)
+		chBuf <- struct{}{}
+		i := i
+		go func() {
+			defer wg.Done()
+			fmt.Println(i)
+			<-chBuf
+		}()
+	}
+
+	wg.Wait()
+}
+
 func main() {
+	sliceResultToFile := []ResultFile{}
 	done := make(chan struct{})
 	defer close(done)
 
-	// "https://someOtherSite.com", "https://www.bbas.com", "https://badhost", "https://www.avito.ru/", "https://www.ozon.ru/"
-	urls := []string{"https://badhost", "https://someOtherSite", "https://www.avito.ru/", "https://www.ozon.ru/", "https://vk.com/", "https://yandex.ru/", "https://www.google.com/", "https://github.com/", "http://medium.com/", "https://golang.org/"}
+	urls := []string{"https://www.bbas.com", "https://badhost", "https://someOtherSite", "https://www.avito.ru/", "https://www.ozon.ru/", "https://vk.com/", "https://yandex.ru/", "https://www.google.com/", "https://github.com/", "http://medium.com/", "https://golang.org/"}
 	for response := range checkStatus(done, urls...) {
-		// time.Sleep(5 * time.Second)
 		if response.Error != nil {
 			fmt.Printf("error: %v\n", response.Error)
 			continue
 		}
-		fmt.Printf("Response: %v\n", response.Response.Status)
+		fmt.Printf("Response: %s %v\n", response.URL, response.Response.Status)
 		_ = response.Response.Body.Close()
+
+		res := ResultFile{URL: response.URL, Status: response.Response.Status}
+
+		sliceResultToFile = append(sliceResultToFile, res)
 	}
+
+	// writeFile(sliceResultToFile)
+	batch(sliceResultToFile)
 }
