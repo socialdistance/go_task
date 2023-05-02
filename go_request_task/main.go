@@ -69,8 +69,8 @@ func checkStatus(urls ...string) <-chan Result {
 	return resultsSuccesfull
 }
 
-func writeFile(lines []ResultFile) {
-	f, err := os.Create("file.txt")
+func writeFile(line ResultFile) {
+	f, err := os.OpenFile("file.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -78,11 +78,9 @@ func writeFile(lines []ResultFile) {
 
 	buffer := bufio.NewWriterSize(f, 128)
 
-	for _, line := range lines {
-		_, err = buffer.WriteString(line.URL + line.Status + "\n")
-		if err != nil {
-			log.Fatal(err)
-		}
+	_, err = buffer.WriteString(line.URL + line.Status + "\n")
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	if err := buffer.Flush(); err != nil {
@@ -92,17 +90,36 @@ func writeFile(lines []ResultFile) {
 
 const batchSize = 2
 
-func process(data []ResultFile) {
-	for start, end := 0, 0; start <= len(data)-1; start = end {
-		end = start + batchSize
-		if end > len(data) {
-			end = len(data)
-		}
-		batch := data[start:end]
-		writeFile(batch)
+func batch(data []ResultFile) {
+	ch := make(chan struct{}, batchSize)
+	var wg sync.WaitGroup
+	for _, i := range data {
+		wg.Add(1)
+		ch <- struct{}{}
+		x := i
+		go func() {
+			defer wg.Done()
+			// do more complex things here
+			writeFile(x)
+			<-ch
+		}()
 	}
+	wg.Wait()
 	fmt.Println("done processing all data")
 }
+
+// func process(data []ResultFile) {
+// 	for start, end := 0, 0; start <= len(data)-1; start = end {
+// 		end = start + batchSize
+// 		if end > len(data) {
+// 			end = len(data)
+// 		}
+// 		batch := data[start:end]
+// 		processBatch(batch)
+// 	}
+
+// 	fmt.Println("done processing all data")
+// }
 
 // func processBatch(list []ResultFile) {
 // 	var wg sync.WaitGroup
@@ -111,7 +128,7 @@ func process(data []ResultFile) {
 // 		wg.Add(1)
 // 		go func() {
 // 			defer wg.Done()
-// 			fmt.Println(x)
+// 			writeFile(x)
 // 		}()
 // 	}
 
@@ -135,6 +152,5 @@ func main() {
 		sliceResultToFile = append(sliceResultToFile, res)
 	}
 
-	// writeFile(sliceResultToFile)
-	process(sliceResultToFile)
+	batch(sliceResultToFile)
 }
