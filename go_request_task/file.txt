@@ -1,8 +1,8 @@
-https://www.ozon.ru/403 Forbidden
 https://www.avito.ru/403 Forbidden
+https://www.ozon.ru/403 Forbidden
+https://vk.com/200 OK
 https://yandex.ru/200 OK
 https://www.google.com/200 OK
 https://github.com/200 OK
 http://medium.com/200 OK
 https://golang.org/200 OK
-https://vk.com/200 OK

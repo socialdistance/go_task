@@ -21,10 +21,12 @@ type ResultFile struct {
 	Status string
 }
 
-func checkStatus(urls ...string) <-chan Result {
+const batchSize = 2
+const timeout = 2 * time.Second
+
+func checkStatus(wg *sync.WaitGroup, urls ...string) <-chan Result {
 	retry := 3
-	wg := &sync.WaitGroup{}
-	client := &http.Client{Timeout: 2 * time.Second}
+	client := &http.Client{Timeout: timeout}
 
 	resultsSuccesfull := make(chan Result)
 	resultsFailed := make(chan Result, 1)
@@ -37,10 +39,8 @@ func checkStatus(urls ...string) <-chan Result {
 			resp, err := client.Get(url)
 			if err != nil {
 				resultsFailed <- Result{Response: nil, Error: err, URL: url}
-				fmt.Println("failed")
 			} else {
 				resultsSuccesfull <- Result{Response: resp, Error: nil, URL: url}
-				fmt.Println("success")
 			}
 		}
 	}()
@@ -88,58 +88,28 @@ func writeFile(line ResultFile) {
 	}
 }
 
-const batchSize = 2
-
-func batch(data []ResultFile) {
+func batch(wg *sync.WaitGroup, data []ResultFile) {
 	ch := make(chan struct{}, batchSize)
-	var wg sync.WaitGroup
-	for _, i := range data {
-		wg.Add(1)
-		ch <- struct{}{}
-		x := i
-		go func() {
-			defer wg.Done()
-			// do more complex things here
-			writeFile(x)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for _, i := range data {
+			ch <- struct{}{}
+			writeFile(i)
 			<-ch
-		}()
-	}
+		}
+	}()
+
 	wg.Wait()
 	fmt.Println("done processing all data")
 }
 
-// func process(data []ResultFile) {
-// 	for start, end := 0, 0; start <= len(data)-1; start = end {
-// 		end = start + batchSize
-// 		if end > len(data) {
-// 			end = len(data)
-// 		}
-// 		batch := data[start:end]
-// 		processBatch(batch)
-// 	}
-
-// 	fmt.Println("done processing all data")
-// }
-
-// func processBatch(list []ResultFile) {
-// 	var wg sync.WaitGroup
-// 	for _, i := range list {
-// 		x := i
-// 		wg.Add(1)
-// 		go func() {
-// 			defer wg.Done()
-// 			writeFile(x)
-// 		}()
-// 	}
-
-// 	wg.Wait()
-// }
-
 func main() {
 	sliceResultToFile := []ResultFile{}
+	wg := &sync.WaitGroup{}
 
 	urls := []string{"https://www.bbas.com", "https://badhost", "https://someOtherSite", "https://www.avito.ru/", "https://www.ozon.ru/", "https://vk.com/", "https://yandex.ru/", "https://www.google.com/", "https://github.com/", "http://medium.com/", "https://golang.org/"}
-	for response := range checkStatus(urls...) {
+	for response := range checkStatus(wg, urls...) {
 		if response.Error != nil {
 			fmt.Printf("error: %v\n", response.Error)
 			continue
@@ -152,5 +122,5 @@ func main() {
 		sliceResultToFile = append(sliceResultToFile, res)
 	}
 
-	batch(sliceResultToFile)
+	batch(wg, sliceResultToFile)
 }
