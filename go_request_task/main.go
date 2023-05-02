@@ -24,7 +24,7 @@ type ResultFile struct {
 const batchSize = 2
 const timeout = 2 * time.Second
 
-func checkStatus(wg *sync.WaitGroup, urls ...string) <-chan Result {
+func checkStatus(wg *sync.WaitGroup, urls chan string) <-chan Result {
 	retry := 3
 	client := &http.Client{Timeout: timeout}
 
@@ -35,7 +35,7 @@ func checkStatus(wg *sync.WaitGroup, urls ...string) <-chan Result {
 	go func() {
 		defer wg.Done()
 		defer close(resultsFailed)
-		for _, url := range urls {
+		for url := range urls {
 			resp, err := client.Get(url)
 			if err != nil {
 				resultsFailed <- Result{Response: nil, Error: err, URL: url}
@@ -69,6 +69,22 @@ func checkStatus(wg *sync.WaitGroup, urls ...string) <-chan Result {
 	return resultsSuccesfull
 }
 
+func batch(wg *sync.WaitGroup, data []ResultFile) {
+	ch := make(chan struct{}, batchSize)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for _, i := range data {
+			ch <- struct{}{}
+			writeFile(i)
+			<-ch
+		}
+	}()
+
+	wg.Wait()
+	fmt.Println("done processing all data")
+}
+
 func writeFile(line ResultFile) {
 	f, err := os.OpenFile("file.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
@@ -88,39 +104,43 @@ func writeFile(line ResultFile) {
 	}
 }
 
-func batch(wg *sync.WaitGroup, data []ResultFile) {
-	ch := make(chan struct{}, batchSize)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for _, i := range data {
-			ch <- struct{}{}
-			writeFile(i)
-			<-ch
-		}
-	}()
+func worker(wg *sync.WaitGroup, linkChan chan string, sliceResultToFile []ResultFile) {
+	defer wg.Done()
 
-	wg.Wait()
-	fmt.Println("done processing all data")
-}
-
-func main() {
-	sliceResultToFile := []ResultFile{}
-	wg := &sync.WaitGroup{}
-
-	urls := []string{"https://www.bbas.com", "https://badhost", "https://someOtherSite", "https://www.avito.ru/", "https://www.ozon.ru/", "https://vk.com/", "https://yandex.ru/", "https://www.google.com/", "https://github.com/", "http://medium.com/", "https://golang.org/"}
-	for response := range checkStatus(wg, urls...) {
+	for response := range checkStatus(wg, linkChan) {
 		if response.Error != nil {
 			fmt.Printf("error: %v\n", response.Error)
 			continue
 		}
+
 		fmt.Printf("Response: %s %v\n", response.URL, response.Response.Status)
 		_ = response.Response.Body.Close()
 
 		res := ResultFile{URL: response.URL, Status: response.Response.Status}
 
 		sliceResultToFile = append(sliceResultToFile, res)
+		fmt.Println("TEST", response)
 	}
 
 	batch(wg, sliceResultToFile)
+}
+
+func main() {
+	sliceResultToFile := []ResultFile{}
+	wg := &sync.WaitGroup{}
+	linkCh := make(chan string)
+
+	urls := []string{"https://www.bbas.com", "https://badhost", "https://someOtherSite", "https://www.avito.ru/", "https://www.ozon.ru/", "https://vk.com/", "https://yandex.ru/", "https://www.google.com/", "https://github.com/", "http://medium.com/", "https://golang.org/"}
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go worker(wg, linkCh, sliceResultToFile)
+	}
+
+	for _, url := range urls {
+		linkCh <- url
+	}
+
+	close(linkCh)
+	wg.Wait()
 }
