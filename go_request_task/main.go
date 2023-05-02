@@ -48,6 +48,7 @@ func checkStatus(wg *sync.WaitGroup, urls chan string) <-chan Result {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer close(resultsSuccesfull)
 		for urlFailed := range resultsFailed {
 			for i := 0; i < retry; i++ {
 				resp, err := client.Get(urlFailed.URL)
@@ -63,7 +64,7 @@ func checkStatus(wg *sync.WaitGroup, urls chan string) <-chan Result {
 
 	go func() {
 		wg.Wait()
-		close(resultsSuccesfull)
+		// close(resultsSuccesfull)
 	}()
 
 	return resultsSuccesfull
@@ -134,7 +135,10 @@ func main() {
 
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
-		go worker(wg, linkCh, sliceResultToFile)
+		go func() {
+			// defer wg.Done()
+			worker(wg, linkCh, sliceResultToFile)
+		}()
 	}
 
 	for _, url := range urls {
