@@ -48,7 +48,7 @@ func checkStatus(wg *sync.WaitGroup, urls chan string) <-chan Result {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer close(resultsSuccesfull)
+		// defer close(resultsSuccesfull)
 		for urlFailed := range resultsFailed {
 			for i := 0; i < retry; i++ {
 				resp, err := client.Get(urlFailed.URL)
@@ -64,11 +64,38 @@ func checkStatus(wg *sync.WaitGroup, urls chan string) <-chan Result {
 
 	go func() {
 		wg.Wait()
-		// close(resultsSuccesfull)
+		// close(resultsFailed)
+		close(resultsSuccesfull)
 	}()
 
 	return resultsSuccesfull
 }
+
+// func processBatch(list []ResultFile) {
+// 	var wg sync.WaitGroup
+// 	for _, i := range list {
+// 		x := i
+// 		wg.Add(1)
+// 		go func() {
+// 			defer wg.Done()
+// 			// do more complex things here
+// 			writeFile(x)
+// 		}()
+// 	}
+// 	wg.Wait()
+// }
+
+// func process(data []ResultFile) {
+// 	for start, end := 0, 0; start <= len(data)-1; start = end {
+// 		end = start + batchSize
+// 		if end > len(data) {
+// 			end = len(data)
+// 		}
+// 		batch := data[start:end]
+// 		processBatch(batch)
+// 	}
+// 	fmt.Println("done processing all data")
+// }
 
 func batch(wg *sync.WaitGroup, data []ResultFile) {
 	ch := make(chan struct{}, batchSize)
@@ -120,7 +147,6 @@ func worker(wg *sync.WaitGroup, linkChan chan string, sliceResultToFile []Result
 		res := ResultFile{URL: response.URL, Status: response.Response.Status}
 
 		sliceResultToFile = append(sliceResultToFile, res)
-		fmt.Println("TEST", response)
 	}
 
 	batch(wg, sliceResultToFile)
