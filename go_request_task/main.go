@@ -24,9 +24,11 @@ type ResultFile struct {
 const batchSize = 2
 const timeout = 2 * time.Second
 
-func checkStatus(wg *sync.WaitGroup, urls chan string) <-chan Result {
+func checkStatus(urls chan string) <-chan Result {
 	retry := 3
 	client := &http.Client{Timeout: timeout}
+
+	wg := &sync.WaitGroup{}
 
 	resultsSuccesfull := make(chan Result)
 	resultsFailed := make(chan Result, 1)
@@ -71,33 +73,9 @@ func checkStatus(wg *sync.WaitGroup, urls chan string) <-chan Result {
 	return resultsSuccesfull
 }
 
-// func processBatch(list []ResultFile) {
-// 	var wg sync.WaitGroup
-// 	for _, i := range list {
-// 		x := i
-// 		wg.Add(1)
-// 		go func() {
-// 			defer wg.Done()
-// 			// do more complex things here
-// 			writeFile(x)
-// 		}()
-// 	}
-// 	wg.Wait()
-// }
+func batch(data []ResultFile) {
+	wg := &sync.WaitGroup{}
 
-// func process(data []ResultFile) {
-// 	for start, end := 0, 0; start <= len(data)-1; start = end {
-// 		end = start + batchSize
-// 		if end > len(data) {
-// 			end = len(data)
-// 		}
-// 		batch := data[start:end]
-// 		processBatch(batch)
-// 	}
-// 	fmt.Println("done processing all data")
-// }
-
-func batch(wg *sync.WaitGroup, data []ResultFile) {
 	ch := make(chan struct{}, batchSize)
 	wg.Add(1)
 	go func() {
@@ -110,7 +88,6 @@ func batch(wg *sync.WaitGroup, data []ResultFile) {
 	}()
 
 	wg.Wait()
-	fmt.Println("done processing all data")
 }
 
 func writeFile(line ResultFile) {
@@ -135,7 +112,7 @@ func writeFile(line ResultFile) {
 func worker(wg *sync.WaitGroup, linkChan chan string, sliceResultToFile []ResultFile) {
 	defer wg.Done()
 
-	for response := range checkStatus(wg, linkChan) {
+	for response := range checkStatus(linkChan) {
 		if response.Error != nil {
 			fmt.Printf("error: %v\n", response.Error)
 			continue
@@ -149,7 +126,7 @@ func worker(wg *sync.WaitGroup, linkChan chan string, sliceResultToFile []Result
 		sliceResultToFile = append(sliceResultToFile, res)
 	}
 
-	batch(wg, sliceResultToFile)
+	batch(sliceResultToFile)
 }
 
 func main() {
