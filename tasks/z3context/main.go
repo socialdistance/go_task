@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"sync"
 	"time"
 )
 
@@ -61,24 +60,26 @@ func (s *Service) getOrderByID(id int64) (*order, error) {
 	}, nil
 }
 
+type result struct {
+	val *order
+	err error
+}
+
 func (s *Service) getOrderByIDWrapper(ctx context.Context, id int64) (*order, error) {
-	// select {
-	// case <-ctx.Done():
-	// 	return nil, ErrTimeout
-	// default:
-	// 	return s.getOrderByID(id)
-	// }
+	resultCh := make(chan result)
+	defer close(resultCh)
 
-	wg := &sync.WaitGroup{}
-	resultCh := make(chan *order)
-
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		res, err := s.getOrderByID(id)
+		resultCh <- result{res, err}
 	}()
 
-	wg.Wait()
+	select {
+	case <-ctx.Done():
+		return nil, ErrTimeout
+	case res := <-resultCh:
+		return res.val, res.err
+	}
 }
 
 func main() {

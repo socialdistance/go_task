@@ -1,6 +1,7 @@
 package src
 
 import (
+	"errors"
 	"io"
 	"strings"
 )
@@ -29,13 +30,18 @@ func (cr *CountingToLowerReaderImpl) ReadAll(bufSize int) (string, error) {
 	strBuilder := strings.Builder{}
 	buf := make([]byte, bufSize)
 
-	n, err := cr.Read(buf)
+	for {
+		n, err := cr.Read(buf)
+		if err == nil {
+			strBuilder.Write(buf[:n])
+		}
 
-	for ; err == nil; n, err = cr.Read(buf) {
-		strBuilder.Write(buf[:n])
+		if errors.Is(io.EOF, err) {
+			return strBuilder.String(), nil
+		}
 	}
 
-	return strBuilder.String(), nil
+	// return strBuilder.String(), nil
 }
 
 func (cr *CountingToLowerReaderImpl) BytesRead() int64 {
