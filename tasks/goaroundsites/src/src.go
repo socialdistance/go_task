@@ -3,7 +3,6 @@ package src
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -41,37 +40,34 @@ func NewMonitor(sites []string, requestFrequency time.Duration) *Monitor {
 	}
 }
 
-func (m *Monitor) String() string {
-	return fmt.Sprintf("TEST: %s", m.Sites)
-}
-
 func (m *Monitor) Run(ctx context.Context) error {
 	// Run printStatuses(ctx) and checkSite(ctx) for m.Sites
 	// Renew sites requests to map every m.RequestFrequency
 	// Return if context closed
 
-	fmt.Println("SITES:", m.Sites)
-
-	m.G.SetLimit(2)
+	for _, site := range m.Sites {
+		site := site
+		m.G.Go(func() error {
+			ticker := time.NewTicker(m.RequestFrequency)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					m.checkSite(ctx, site)
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		})
+	}
 
 	m.G.Go(func() error {
-		for _, site := range m.Sites {
-			// m.Mtx.Lock()
-			// defer m.Mtx.Unlock()
-			m.checkSite(ctx, site)
-		}
-
-		return nil
+		return m.printStatuses(ctx)
 	})
 
-	m.G.Go(func() error {
-		err := m.printStatuses(ctx)
-
+	if err := m.G.Wait(); err != nil && err != context.Canceled {
 		return err
-	})
-
-	if err := m.G.Wait(); err != nil {
-		log.Fatalf("Fatal err from errG: %s", err.Error())
+		// log.Fatalf("Fatal err from errG: %s", err.Error())
 	}
 
 	return nil
@@ -79,29 +75,26 @@ func (m *Monitor) Run(ctx context.Context) error {
 
 func (m *Monitor) checkSite(ctx context.Context, site string) {
 	// with http client go through site and write result to m.StatusMap
-	fmt.Println("Check sites...")
+	client := http.Client{
+		Timeout: Timeout,
+	}
+
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, site, nil)
 	if err != nil {
 		fmt.Println("Err", err)
 	}
 
-	resp, err := http.DefaultClient.Do(request)
-
-	if _, ok := m.StatusMap[site]; ok {
-		m.Mtx.Lock()
-		defer m.Mtx.Unlock()
-		m.StatusMap[site] = SiteStatus{
-			Name:          site,
-			StatusCode:    resp.StatusCode,
-			TimeOfRequest: time.Now(),
-		}
+	resp, err := client.Do(request)
+	if err != nil {
+		return
 	}
+	defer resp.Body.Close()
 
 	m.Mtx.Lock()
 	m.StatusMap[site] = SiteStatus{
 		Name:          site,
 		StatusCode:    resp.StatusCode,
-		TimeOfRequest: time.Now(),
+		TimeOfRequest: time.Now().Truncate(time.Second),
 	}
 	m.Mtx.Unlock()
 
@@ -111,18 +104,16 @@ func (m *Monitor) printStatuses(ctx context.Context) error {
 	// print results of m.Status every second of until ctx cancelled
 	ticker := time.NewTicker(1 * time.Second)
 
-	select {
-	case <-ctx.Done():
-		fmt.Println("Context done for printStatuses")
-		return nil
-	case <-ticker.C:
-		fmt.Println("Ticker...")
-		// m.Mtx.Lock()
-		for _, s := range m.StatusMap {
-			fmt.Println(s.StatusCode)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			m.Mtx.Lock()
+			for _, s := range m.StatusMap {
+				fmt.Println(s.Name, s.StatusCode, s.TimeOfRequest)
+			}
+			m.Mtx.Unlock()
 		}
-		// m.Mtx.Unlock()
 	}
-
-	return nil
 }

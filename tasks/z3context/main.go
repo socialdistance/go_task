@@ -67,7 +67,7 @@ type result struct {
 
 func (s *Service) getOrderByIDWrapper(ctx context.Context, id int64) (*order, error) {
 	resultCh := make(chan result)
-	defer close(resultCh)
+	// defer close(resultCh)
 
 	go func() {
 		res, err := s.getOrderByID(id)
