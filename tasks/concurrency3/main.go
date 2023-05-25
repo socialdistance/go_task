@@ -31,21 +31,27 @@ func (r *ringBuffer) Run() {
 func main() {
 	inCh := make(chan int)
 	outCh := make(chan int, 4)
+	doneCh := make(chan struct{})
 	rb := NewRingBuffer(inCh, outCh)
 
 	go rb.Run()
-	resSlice := make([]int, 0)
 
 	max := 100
+
 	for i := 0; i < max; i++ {
 		inCh <- i
 	}
-
 	close(inCh)
 
-	for res := range outCh {
-		resSlice = append(resSlice, res)
-	}
+	resSlice := make([]int, 0)
+	go func() {
+		for res := range outCh {
+			resSlice = append(resSlice, res)
+		}
+		doneCh <- struct{}{}
+	}()
+
+	<-doneCh
 
 	fmt.Println(resSlice)
 }
